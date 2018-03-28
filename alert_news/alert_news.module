@@ -1,0 +1,81 @@
+<?php
+
+/**
+ * Implements hook_entity_insert().
+ */
+function alert_news_entity_insert(Drupal\Core\Entity\EntityInterface $entity)
+{
+    if ($entity->bundle() != "news_article") {
+        return;
+    }
+
+   //$path = '/node/' . $entity->id();
+    $host = \Drupal::request()->getSchemeAndHttpHost();
+    $path = '/' . $entity->toUrl()->getInternalPath();
+    $langcode = $entity->language()->getId();
+    $path_alias = '/' . str_replace(' ', '_', trim($entity->label()));
+
+    // save alias
+    $savedpath = \Drupal::service('path.alias_storage')->save($path, $path_alias, $langcode);
+
+    // get e-mail addresses
+    // SELECT mail FROM users_field_data WHERE mail IS NOT NULL
+    $emails = \Drupal\Core\Database\Database::getConnection()->select('users_field_data', 'u')
+        ->fields('u', ['mail'])
+        ->isNotNull('u.mail')
+        ->execute()
+        ->fetchAll();
+
+    // send e-mail for these addresses
+    $result = sendMailForSelectedAddresses($emails, $entity->label(), $host . $path_alias);
+
+    ($result['result'] !== true) ?
+        drupal_set_message(t('There was a problem sending your message and it was not sent.'), 'error')
+        :
+        drupal_set_message(t('Your message has been sent.'));
+}
+
+function sendMailForSelectedAddresses($emails, $subject, $pagePath) {
+    $to = '';
+
+    foreach ($emails as $mailAddress) {
+        $to .= $mailAddress->mail . ', ';
+    }
+
+    $mailManager = \Drupal::service('plugin.manager.mail');
+
+    $module = 'alert_news';
+    $key = 'newarticle';
+    // $to = \Drupal::currentUser()->getEmail();
+
+    $params['node_title'] =
+        t('New article created: ') . $subject;
+    $params['message'] =
+        t('Attention! New content on the page. Click for the following link to read it : ' . $pagePath);
+
+    $langcode = \Drupal::currentUser()->getPreferredLangcode();
+    $send = true;
+
+    $result = $mailManager->mail($module, $key, $to, $langcode, $params, NULL, $send);
+
+    return $result;
+}
+
+/**
+ * Implements hook_mail().
+ */
+function alert_news_mail($key, &$message, $params)
+{
+    $options = array(
+        'langcode' => $message['langcode'],
+    );
+
+    switch ($key) {
+        case 'newarticle':
+            $message['from'] = \Drupal::config('system.site')->get('mail');
+            $message['subject'] = $params['node_title'];
+            $message['body'][] = $params['message'];
+            break;
+    }
+}
+

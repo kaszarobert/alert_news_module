@@ -1,0 +1,7 @@
+alert_news.content:
+  path: '/set_alert_news'
+  defaults:
+    _controller: '\Drupal\alert_news\Controller\AlertNewsController::content'
+    _title: 'News Alert Settings'
+  requirements:
+    _permission: 'access content'

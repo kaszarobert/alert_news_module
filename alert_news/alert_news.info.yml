@@ -1,0 +1,6 @@
+name: Alert News Module
+description: Alerts all registered accounts about the new articles
+package: Custom
+type: module
+version: 1.0
+core: 8.x
