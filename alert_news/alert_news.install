@@ -1,0 +1,36 @@
+<?php
+
+function alert_news_schema() {
+    $schema['module_alert_news'] = [
+        'description' => 'Stores which accounts requested notifications about each news types.',
+        'fields' => [
+            'uid' => [
+                'type' => 'int',
+                'not null' => TRUE,
+                'description' => "User's {users}.uid",
+            ],
+            'tid' => [
+                'type' => 'int',
+                'not null' => TRUE,
+                'default' => 0,
+                'description' => "HirTipus Taxonomy {taxonomy_term_field_data}.tid",
+            ],
+        ],
+        'foreign keys' => array(
+            'taxonomy_term_field_data_module_alert_news' => array(
+                'table' => 'taxonomy_term_field_data',
+                'columns' => array(
+                    'tid' => 'tid',
+                ),
+            ),
+            'users_module_alert_news' => array(
+                'table' => 'users',
+                'columns' => array(
+                    'uid' => 'uid',
+                ),
+            ),
+        ),
+    ];
+
+    return $schema;
+}

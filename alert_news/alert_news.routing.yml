@@ -5,3 +5,11 @@ alert_news.content:
     _title: 'News Alert Settings'
   requirements:
     _permission: 'access content'
+
+alert_news.form:
+ path: '/testform1'
+ defaults:
+   _title: 'News Alert Settings'
+   _form: '\Drupal\alert_news\Form\AlertNewsForm'
+ requirements:
+   _permission: 'access content'
