@@ -16,6 +16,8 @@ function alert_news_schema() {
                 'description' => "HirTipus Taxonomy {taxonomy_term_field_data}.tid",
             ],
         ],
+
+        // for some reason, this is just for documentation, foreign keys are not generated in db according to the API doc
         'foreign keys' => array(
             'taxonomy_term_field_data_module_alert_news' => array(
                 'table' => 'taxonomy_term_field_data',

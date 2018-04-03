@@ -4,6 +4,7 @@ namespace Drupal\alert_news\Form;
 
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\user\Entity\User;
 
 class AlertNewsForm extends FormBase
 {
@@ -30,17 +31,49 @@ class AlertNewsForm extends FormBase
         return $result;
     }
 
+    private function getSubscribedNewsTypeListForUser($id, array &$newsTypes) {
+        //SELECT * FROM `module_alert_news` WHERE uid = 1
+        $result = \Drupal::database()->select('module_alert_news', 'an')
+            ->fields('an', ['uid'])
+            ->fields('an', ['tid'])
+            ->condition('uid', $id, '=')
+            ->execute()
+            ->fetchAll();
+
+        return $result;
+    }
+
+    private function checkIfUserIsSubscribedForNewsType($key, $collection) {
+        //return array_key_exists($key, $collection);
+        foreach ($collection as $item) {
+            if ($item->tid == $key) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+
     /**
      * {@inheritdoc}
      */
     public function buildForm(array $form, FormStateInterface $form_state) {
         $hirtipusok = $this->getHirTipusokFromDatabase();
 
+        $userid = \Drupal::currentUser()->id();
+
+        $subscribednews = $this->getSubscribedNewsTypeListForUser($userid, $hirtipusok);
+
         $rows = array();
         foreach ($hirtipusok as $row) {
+
+            $isSubscribed = $this->checkIfUserIsSubscribedForNewsType($row->tid, $subscribednews);
+
             $form['alert_news_' . $row->tid] = array(
                 '#type' => 'checkbox',
                 '#title' => $this->t($row->name),
+                '#default_value' => $isSubscribed,
             );
         }
 
