@@ -12,4 +12,4 @@ alert_news.form:
    _title: 'News Alert Settings'
    _form: '\Drupal\alert_news\Form\AlertNewsForm'
  requirements:
-   _permission: 'access content'
+   _permission: 'set news alert categories'

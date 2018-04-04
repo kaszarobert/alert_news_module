@@ -1,0 +1,2 @@
+set news alert categories:
+  title: 'Set categories for e-mail alert for news'

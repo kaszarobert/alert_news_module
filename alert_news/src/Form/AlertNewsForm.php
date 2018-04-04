@@ -2,6 +2,7 @@
 
 namespace Drupal\alert_news\Form;
 
+use Drupal\Core\Database\Query\Condition;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 
@@ -18,7 +19,7 @@ class AlertNewsForm extends FormBase
     /**
      * @return mixed
      */
-    private function getHirTipusokFromDatabase() {
+    private function getNewsTypesFromDatabase() {
         //SELECT name FROM `taxonomy_term_field_data` WHERE vid = 'hirtipusok'
         $result = \Drupal::database()
             ->select('taxonomy_term_field_data', 't')
@@ -32,12 +33,20 @@ class AlertNewsForm extends FormBase
     }
 
     private function getSubscribedNewsTypeListForUser($id, array &$newsTypes) {
+        // filter for existing news types from db
+        $db_or = new Condition("OR");
+
+        foreach($newsTypes as $item){
+            $db_or->condition('tid', $item->tid,'=');
+        }
+
         //SELECT * FROM `module_alert_news` WHERE uid = 1
         $result = \Drupal::database()
             ->select('module_alert_news', 'an')
             ->fields('an', ['uid'])
             ->fields('an', ['tid'])
             ->condition('uid', $id, '=')
+            ->condition($db_or)
             ->execute()
             ->fetchAll();
 
@@ -58,20 +67,17 @@ class AlertNewsForm extends FormBase
     private function getCurrentUserId() {
         return \Drupal::currentUser()->id();
     }
+
     /**
      * {@inheritdoc}
      */
     public function buildForm(array $form, FormStateInterface $form_state) {
-        $hirtipusok = $this->getHirTipusokFromDatabase();
+        $newsTypes = $this->getNewsTypesFromDatabase();
+        $userId = $this->getCurrentUserId();
+        $subscribedNews = $this->getSubscribedNewsTypeListForUser($userId, $newsTypes);
 
-        $userid = $this->getCurrentUserId();
-
-        $subscribednews = $this->getSubscribedNewsTypeListForUser($userid, $hirtipusok);
-
-        $rows = array();
-        foreach ($hirtipusok as $row) {
-
-            $isSubscribed = $this->checkIfUserIsSubscribedForNewsType($row->tid, $subscribednews);
+        foreach ($newsTypes as $row) {
+            $isSubscribed = $this->checkIfUserIsSubscribedForNewsType($row->tid, $subscribedNews);
 
             $form['alert_news_' . $row->tid] = array(
                 '#type' => 'checkbox',
@@ -80,7 +86,6 @@ class AlertNewsForm extends FormBase
             );
         }
 
-        //$form['actions']['#type'] = 'actions';
         $form['actions']['submit'] = array(
             '#type' => 'submit',
             '#value' => $this->t('Save'),
@@ -152,13 +157,13 @@ class AlertNewsForm extends FormBase
             // check if record exists about that
             if (empty($this->getSelectedUserAndNewsCategoryFromDb($uid, $tid))) {
                 // if there's no record about that subscription, add one to database
-                $result = $this->createNewSubscription($uid, $tid);
+                $this->createNewSubscription($uid, $tid);
             }
             // otherwise we don't need to store anything new in db
 
         } else {
             // remove the record from database
-            $result = $this->removeSubscriptionFromUser($uid, $tid);
+            $this->removeSubscriptionFromUser($uid, $tid);
 
         }
     }
@@ -182,15 +187,15 @@ class AlertNewsForm extends FormBase
         // display form data for debugging
         $this->displayReturnedForm($form_state);
 
-        // get userid
-        $userid = $this->getCurrentUserId();
+        // get userId
+        $userId = $this->getCurrentUserId();
 
         foreach ($form_state->getValues() as $key => $value) {
             // get tid
             if (strpos($key, 'alert_news') !== false) {
                 $tid = substr($key, 11);
                 // save in db if necessary
-                $this->setValueInDatabase($userid, $tid, $value);
+                $this->setValueInDatabase($userId, $tid, $value);
             }
         }
     }
