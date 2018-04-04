@@ -2,12 +2,28 @@
 
 namespace Drupal\alert_news\Form;
 
-use Drupal\Core\Database\Query\Condition;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\alert_news\Database\IDatabaseCommunicator;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 class AlertNewsForm extends FormBase
 {
+    private $db;
+
+    function __construct(IDatabaseCommunicator $dbc) {
+        $this->db = $dbc;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public static function create(ContainerInterface $container) {
+        return new static(
+            $container->get('service_alert_news_db_communicator')
+        );
+    }
+
     /**
      * {@inheritdoc}
      */
@@ -17,67 +33,15 @@ class AlertNewsForm extends FormBase
     }
 
     /**
-     * @return mixed
-     */
-    private function getNewsTypesFromDatabase() {
-        //SELECT name FROM `taxonomy_term_field_data` WHERE vid = 'hirtipusok'
-        $result = \Drupal::database()
-            ->select('taxonomy_term_field_data', 't')
-            ->fields('t', ['tid'])
-            ->fields('t', ['name'])
-            ->condition('vid', 'hirtipusok', '=')
-            ->execute()
-            ->fetchAll();
-
-        return $result;
-    }
-
-    private function getSubscribedNewsTypeListForUser($id, array &$newsTypes) {
-        // filter for existing news types from db
-        $db_or = new Condition("OR");
-
-        foreach($newsTypes as $item){
-            $db_or->condition('tid', $item->tid,'=');
-        }
-
-        //SELECT * FROM `module_alert_news` WHERE uid = 1
-        $result = \Drupal::database()
-            ->select('module_alert_news', 'an')
-            ->fields('an', ['uid'])
-            ->fields('an', ['tid'])
-            ->condition('uid', $id, '=')
-            ->condition($db_or)
-            ->execute()
-            ->fetchAll();
-
-        return $result;
-    }
-
-    private function checkIfUserIsSubscribedForNewsType($key, $collection) {
-        //return array_key_exists($key, $collection);
-        foreach ($collection as $item) {
-            if ($item->tid == $key) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function getCurrentUserId() {
-        return \Drupal::currentUser()->id();
-    }
-
-    /**
      * {@inheritdoc}
      */
     public function buildForm(array $form, FormStateInterface $form_state) {
-        $newsTypes = $this->getNewsTypesFromDatabase();
-        $userId = $this->getCurrentUserId();
-        $subscribedNews = $this->getSubscribedNewsTypeListForUser($userId, $newsTypes);
+        $newsTypes = $this->db->getNewsTypesFromDatabase();
+        $userId = $this->db->getCurrentUserId();
+        $subscribedNews = $this->db->getSubscribedNewsTypeListForUser($userId, $newsTypes);
 
         foreach ($newsTypes as $row) {
-            $isSubscribed = $this->checkIfUserIsSubscribedForNewsType($row->tid, $subscribedNews);
+            $isSubscribed = $this->db->checkIfUserIsSubscribedForNewsType($row->tid, $subscribedNews);
 
             $form['alert_news_' . $row->tid] = array(
                 '#type' => 'checkbox',
@@ -101,51 +65,6 @@ class AlertNewsForm extends FormBase
 
     }
 
-    private function getSelectedUserAndNewsCategoryFromDb($uid, $tid) {
-        $result = \Drupal::database()
-            ->select('module_alert_news', 'an')
-            ->fields('an', ['uid'])
-            ->fields('an', ['tid'])
-            ->condition('uid', $uid, '=')
-            ->condition('tid', $tid, '=')
-            ->execute()
-            ->fetchAll();
-
-        return $result;
-    }
-
-    /**
-     * @param $uid
-     * @param $tid
-     * @return \Drupal\Core\Database\StatementInterface|int|null
-     * @throws \Exception
-     */
-    private function createNewSubscription($uid, $tid) {
-        // INSERT INTO `module_alert_news` (uid, tid) VALUES (1, 4)
-        $result = \Drupal::database()
-            ->insert('module_alert_news')
-            ->fields(
-                array(
-                    'uid' => $uid,
-                    'tid' => $tid,
-                )
-            )
-            ->execute();
-
-        return $result;
-    }
-
-    private function removeSubscriptionFromUser($uid, $tid) {
-        // DELETE FROM `module_alert_news` WHERE uid = 1 AND tid = 4
-        $result = \Drupal::database()
-            ->delete('module_alert_news')
-            ->condition('uid', $uid, "=")
-            ->condition('tid', $tid, "=")
-            ->execute();
-
-        return $result;
-    }
-
     /**
      * @param $uid
      * @param $tid
@@ -155,15 +74,15 @@ class AlertNewsForm extends FormBase
     private function setValueInDatabase($uid, $tid, $value) {
         if ($value == "1") {
             // check if record exists about that
-            if (empty($this->getSelectedUserAndNewsCategoryFromDb($uid, $tid))) {
+            if (empty($this->db->getSelectedUserAndNewsCategoryFromDb($uid, $tid))) {
                 // if there's no record about that subscription, add one to database
-                $this->createNewSubscription($uid, $tid);
+                $this->db->createNewSubscription($uid, $tid);
             }
             // otherwise we don't need to store anything new in db
 
         } else {
             // remove the record from database
-            $this->removeSubscriptionFromUser($uid, $tid);
+            $this->db->removeSubscriptionFromUser($uid, $tid);
 
         }
     }
@@ -185,10 +104,10 @@ class AlertNewsForm extends FormBase
      */
     public function submitForm(array &$form, FormStateInterface $form_state) {
         // display form data for debugging
-        $this->displayReturnedForm($form_state);
+        //$this->displayReturnedForm($form_state);
 
         // get userId
-        $userId = $this->getCurrentUserId();
+        $userId = $this->db->getCurrentUserId();
 
         foreach ($form_state->getValues() as $key => $value) {
             // get tid
