@@ -1,5 +1,7 @@
 <?php
 
+use Drupal\Core\Database\Query\Condition;
+
 /**
  * Implements hook_entity_insert().
  */
@@ -9,56 +11,134 @@ function alert_news_entity_insert(Drupal\Core\Entity\EntityInterface $entity)
         return;
     }
 
-   //$path = '/node/' . $entity->id();
+    //$path = '/node/' . $entity->id();
     $host = \Drupal::request()->getSchemeAndHttpHost();
     $path = '/' . $entity->toUrl()->getInternalPath();
     $langcode = $entity->language()->getId();
     $path_alias = '/' . str_replace(' ', '_', trim($entity->label()));
 
-    // save alias
-    $savedpath = \Drupal::service('path.alias_storage')->save($path, $path_alias, $langcode);
+    // get news type field
+    $selectedNewsTypes = $entity->get('field_hir_tipusa')->getValue();
 
-    // get e-mail addresses
+    // save alias
+    $savedpath = \Drupal::service('path.alias_storage')
+        ->save($path, $path_alias, $langcode);
+
+    // get e-mail addresses and other necessary user data
+    $usersData = getUserDataWithEmail();
+
+    // send e-mail for these addresses
+    $result = sendMailForSelectedAddresses(
+        $usersData, $entity->label(), $selectedNewsTypes, $host . $path_alias);
+
+    if ($result['result'] == true) {
+        drupal_set_message(t('The messages have been sent successfully.'));
+    }
+
+}
+
+function getUserDataWithEmail(){
     // SELECT mail FROM users_field_data WHERE mail IS NOT NULL
-    $emails = \Drupal\Core\Database\Database::getConnection()->select('users_field_data', 'u')
+    return \Drupal\Core\Database\Database::getConnection()->select('users_field_data', 'u')
+        ->fields('u', ['uid'])
         ->fields('u', ['mail'])
+        ->fields('u', ['langcode'])
         ->isNotNull('u.mail')
         ->execute()
         ->fetchAll();
-
-    // send e-mail for these addresses
-    $result = sendMailForSelectedAddresses($emails, $entity->label(), $host . $path_alias);
-
-    ($result['result'] !== true) ?
-        drupal_set_message(t('There was a problem sending your message and it was not sent.'), 'error')
-        :
-        drupal_set_message(t('Your message has been sent.'));
 }
 
-function sendMailForSelectedAddresses($emails, $subject, $pagePath) {
-    $to = '';
+function getNewsTypesFromDatabase() {
+    //SELECT name FROM `taxonomy_term_field_data` WHERE vid = 'hirtipusok'
+    $result =\Drupal\Core\Database\Database::getConnection()
+        ->select('taxonomy_term_field_data', 't')
+        ->fields('t', ['tid'])
+        ->fields('t', ['name'])
+        ->condition('vid', 'hirtipusok', '=')
+        ->execute()
+        ->fetchAll();
 
-    foreach ($emails as $mailAddress) {
-        $to .= $mailAddress->mail . ', ';
+    return $result;
+}
+
+function getSubscribedNewsTypeListForUser($id, array &$newsTypes) {
+    // filter for existing news types from db
+
+    $db_or = new Condition("OR");
+
+    foreach($newsTypes as $item){
+        $db_or->condition('tid', $item->tid,'=');
     }
 
+    //SELECT * FROM `module_alert_news` WHERE uid = 1
+    $result = \Drupal\Core\Database\Database::getConnection()
+        ->select('module_alert_news', 'an')
+        ->fields('an', ['uid'])
+        ->fields('an', ['tid'])
+        ->condition('uid', $id, '=')
+        ->condition($db_or)
+        ->execute()
+        ->fetchAll();
+
+    return $result;
+}
+
+function checkIfUserIsSubscribedForNewsType($key, $collection) {
+    foreach ($collection as $item) {
+        if ($item->tid == $key) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function sendMailForSelectedAddresses($usersData, $subject, $selectedNewsTypes, $pagePath) {
     $mailManager = \Drupal::service('plugin.manager.mail');
 
     $module = 'alert_news';
     $key = 'newarticle';
-    // $to = \Drupal::currentUser()->getEmail();
 
     $params['node_title'] =
         t('New article created: ') . $subject;
     $params['message'] =
-        t('Attention! New content on the page. Click for the following link to read it : ' . $pagePath);
+        t('Attention! New content on the page. Click for the following link to read it : ') . $pagePath;
 
-    $langcode = \Drupal::currentUser()->getPreferredLangcode();
     $send = true;
+    $ok = true;
 
-    $result = $mailManager->mail($module, $key, $to, $langcode, $params, NULL, $send);
+    // get everything from module_alert_news table
+    $newsTypes = getNewsTypesFromDatabase();
 
-    return $result;
+    foreach ($usersData as $user) {
+        $userId = $user->uid;
+        $subscribedNews = getSubscribedNewsTypeListForUser($userId, $newsTypes);
+
+        $isSubscribed = false;
+        foreach ($selectedNewsTypes as $newsType) {
+            $newsTypeId = $newsType['target_id'];
+
+            if (checkIfUserIsSubscribedForNewsType($newsTypeId, $subscribedNews)) {
+                $isSubscribed = true;
+                break;
+            }
+        }
+
+        if($isSubscribed) {
+            $langcode = $user->langcode;
+            $to = $user->mail;
+            $result = $mailManager->mail($module, $key, $to, $langcode, $params, NULL, $send);
+
+            if ($result['result'] !== true) {
+                drupal_set_message(
+                    t('There was a problem sending your message and it was not sent to ') . $to,
+                    'error');
+                $ok = false;
+            }
+        }
+    }
+
+    return $ok;
 }
 
 /**
@@ -66,10 +146,6 @@ function sendMailForSelectedAddresses($emails, $subject, $pagePath) {
  */
 function alert_news_mail($key, &$message, $params)
 {
-    $options = array(
-        'langcode' => $message['langcode'],
-    );
-
     switch ($key) {
         case 'newarticle':
             $message['from'] = \Drupal::config('system.site')->get('mail');
